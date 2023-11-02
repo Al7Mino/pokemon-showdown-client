@@ -27,6 +27,12 @@
 				if (this.curTeam.format.includes('bdsp')) {
 					this.curTeam.dex = Dex.mod('gen8bdsp');
 				}
+				// * Custom formats
+				if (this.curTeam.format.includes('special')) {
+					if (this.curTeam.format.includes('standard')) {
+						this.curTeam.dex = Dex.mod('gen9spestd');
+					}
+				}
 				Storage.activeSetList = this.curSetList;
 			}
 		},
@@ -695,6 +701,12 @@
 			}
 			if (this.curTeam.format.includes('bdsp')) {
 				this.curTeam.dex = Dex.mod('gen8bdsp');
+			}
+			// * Custom format
+			if (this.curTeam.format.includes('special')) {
+				if (this.curTeam.format.includes('standard')) {
+					this.curTeam.dex = Dex.mod('gen9spestd');
+				}
 			}
 			Storage.activeSetList = this.curSetList = Storage.unpackTeam(this.curTeam.team);
 			this.curTeamIndex = i;
@@ -1497,6 +1509,11 @@
 			if (this.curTeam.format.includes('bdsp')) {
 				this.curTeam.dex = Dex.mod('gen8bdsp');
 			}
+			if (this.curTeam.format.includes('special')) {
+				if (this.curTeam.format.includes('standard')) {
+					this.curTeam.dex = Dex.mod('gen9spestd');
+				}
+			}
 			this.save();
 			if (this.curTeam.gen === 5 && !Dex.loadedSpriteData['bw']) Dex.loadSpriteData('bw');
 			this.update();
@@ -1972,6 +1989,8 @@
 					this.$chart.scrollTop(0);
 				}
 				this.search.$inputEl = $inputEl;
+				// * Custom format - Console log search format changes
+				// console.log('search', type, this.curTeam.format, this.curSet)
 				this.search.setType(type, this.curTeam.format || 'gen9', this.curSet, cur);
 				this.qInitial = q;
 				this.search.qName = this.curChartName;

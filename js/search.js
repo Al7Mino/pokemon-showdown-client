@@ -198,6 +198,8 @@
 			return this.renderMoveSortRow();
 		case 'pokemon':
 			var pokemon = this.engine.dex.species.get(id);
+			// * Custom format - Console log search engine
+			// console.log('engine', id, {...this.engine.dex}, pokemon)
 			return this.renderPokemonRow(pokemon, matchStart, matchLength, errorMessage, attrs);
 		case 'move':
 			var move = this.engine.dex.moves.get(id);
