@@ -73,7 +73,7 @@
 			if (this.battle) this.battle.destroy();
 		},
 		requestLeave: function (e) {
-			if (this.side && this.battle && !this.battleEnded && !this.expired && !this.battle.forfeitPending) {
+			if ((this.side || this.requireForfeit) && this.battle && !this.battleEnded && !this.expired && !this.battle.forfeitPending) {
 				app.addPopup(ForfeitPopup, {room: this, sourceEl: e && e.currentTarget, gameType: 'battle'});
 				return false;
 			}
@@ -137,6 +137,14 @@
 			if (!data) return;
 			if (data.substr(0, 6) === '|init|') {
 				return this.init(data);
+			}
+			if (data.substr(0, 11) === '|cantleave|') {
+				this.requireForfeit = true;
+				return;
+			}
+			if (data.substr(0, 12) === '|allowleave|') {
+				this.requireForfeit = false;
+				return;
 			}
 			if (data.substr(0, 9) === '|request|') {
 				data = data.slice(9);
@@ -252,7 +260,7 @@
 		updateControls: function () {
 			if (this.battle.scene.customControls) return;
 			var controlsShown = this.controlsShown;
-			var switchSidesButton = '<p><button class="button" name="switchSides"><i class="fa fa-random"></i> Switch sides</button></p>';
+			var switchSidesButton = '<p><button class="button" name="switchViewpoint"><i class="fa fa-random"></i> Switch sides</button></p>';
 			this.controlsShown = false;
 
 			if (this.battle.seeking !== null) {
@@ -1081,14 +1089,14 @@
 			if (!sideData.id) return;
 			this.side = sideData.id;
 			if (this.battle.mySide.sideid !== this.side) {
-				this.battle.setPerspective(this.side);
+				this.battle.setViewpoint(this.side);
 				this.$chat = this.$chatFrame.find('.inner');
 			}
 		},
 		updateSide: function () {
 			var sideData = this.request.side;
 			this.battle.myPokemon = sideData.pokemon;
-			this.battle.setPerspective(sideData.id);
+			this.battle.setViewpoint(sideData.id);
 			for (var i = 0; i < sideData.pokemon.length; i++) {
 				var pokemonData = sideData.pokemon[i];
 				if (this.request.active && this.request.active[i]) pokemonData.canGmax = this.request.active[i].gigantamax || false;
@@ -1149,8 +1157,8 @@
 
 			e.stopPropagation();
 		},
-		switchSides: function () {
-			this.battle.switchSides();
+		switchViewpoint: function () {
+			this.battle.switchViewpoint();
 		},
 		pause: function () {
 			this.tooltips.hideTooltip();
@@ -1511,8 +1519,8 @@
 			this.close();
 		},
 		leaveRoom: function (data) {
-			this.room.send('/noreply /leave');
 			this.close();
+			return app.removeRoom(this.room.id);
 		}
 	});
 
