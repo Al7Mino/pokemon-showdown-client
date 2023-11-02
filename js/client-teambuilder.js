@@ -15,6 +15,9 @@
 				Storage.whenTeamsLoaded(this.update, this);
 			}
 			this.update();
+			if (typeof Storage.prefs('uploadprivacy') !== 'undefined') {
+				this.$('input[name=teamprivacy]').is('checked', Storage.prefs('uploadprivacy'));
+			}
 		},
 		focus: function () {
 			if (this.curTeam) {
@@ -47,6 +50,9 @@
 			'change input.teamnameedit': 'teamNameChange',
 			'click button.formatselect': 'selectFormat',
 			'change input[name=nickname]': 'nicknameChange',
+
+			// misc
+			'click input[name=teamprivacy]': 'privacyChange',
 
 			// details
 			'change .detailsform input': 'detailsChange',
@@ -142,6 +148,10 @@
 		update: function () {
 			teams = Storage.teams;
 			if (this.curTeam) {
+				if (this.curTeam.loaded === false || (this.curTeam.teamid && !this.curTeam.loaded)) {
+					this.loadTeam();
+					return this.updateTeamView();
+				}
 				this.ignoreEVLimits = (this.curTeam.gen < 3 ||
 					((this.curTeam.format.includes('hackmons') || this.curTeam.format.endsWith('bh')) && this.curTeam.gen !== 6) ||
 					this.curTeam.format.includes('metronomebattle'));
@@ -151,6 +161,24 @@
 				return this.updateTeamView();
 			}
 			return this.updateTeamInterface();
+		},
+
+		privacyChange: function (ev) {
+			Storage.prefs('uploadprivacy', ev.currentTarget.checked);
+		},
+
+		loadTeam: function () {
+			if (this.loadingTeam) return false;
+			this.loadingTeam = true;
+			var teambuilder = this;
+			app.loadTeam(this.curTeam, function (team) {
+				window.builderTeam = team;
+				teambuilder.loadingTeam = false;
+				teambuilder.curSetList = Storage.unpackTeam(team.team);
+				Storage.activeSetList = teambuilder.curSetList;
+				teambuilder.curTeam.team = Storage.packTeam(teambuilder.curSetList);
+				teambuilder.updateTeamView();
+			});
 		},
 
 		/*********************************************************
@@ -466,17 +494,21 @@
 				}
 			}
 
-			buf += '</ul>';
+			buf += '</ul><p>';
 			if (atLeastOne) {
-				buf += '<p><button name="new" value="team" class="button"><i class="fa fa-plus-circle"></i> ' + newTeamButtonText + '</button> <button name="new" value="box" class="button"><i class="fa fa-archive"></i> New Box</button></p>';
+				buf += '<button name="new" value="team" class="button"><i class="fa fa-plus-circle"></i> ' + newTeamButtonText + '</button> <button name="new" value="box" class="button"><i class="fa fa-archive"></i> New Box</button> ';
 			}
+			buf += '<button class="button" name="send" value="/teams">View teams uploaded to server</button>';
+			buf += '</p>';
 
 			if (window.nodewebkit) {
 				buf += '<button name="revealFolder" class="button"><i class="fa fa-folder-open"></i> Reveal teams folder</button> <button name="reloadTeamsFolder" class="button"><i class="fa fa-refresh"></i> Reload teams files</button> <button name="backup" class="button"><i class="fa fa-upload"></i> Backup/Restore all teams</button>';
 			} else if (this.curFolder) {
 				buf += '<button name="backup" class="button"><i class="fa fa-upload"></i> Backup all teams from this folder</button>';
 			} else if (atLeastOne) {
-				buf += '<p><strong>Clearing your cookies (specifically, <code>localStorage</code>) will delete your teams.</strong> <span class="storage-warning">Browsers sometimes randomly clear cookies - you should back up your teams or use the desktop client if you want to make sure you don\'t lose them.</span></p>';
+				buf += '<p><strong>Clearing your cookies (specifically, <code>localStorage</code>) will delete your teams.</strong> ';
+				buf += '<span class="storage-warning">Browsers sometimes randomly clear cookies - you should upload your teams to the Showdown database ';
+				buf += 'or make a backup yourself if you want to make sure you don\'t lose them.</span></p>';
 				buf += '<button name="backup" class="button"><i class="fa fa-upload"></i> Backup/Restore all teams</button>';
 				buf += '<p>If you want to clear your cookies or <code>localStorage</code>, you can use the Backup/Restore feature to save your teams as text first.</p>';
 				var self = this;
@@ -844,6 +876,24 @@
 			this.exportMode = true;
 			this.update();
 		},
+		psExport: function () {
+			var cmd = '/teams ';
+			cmd += this.curTeam.teamid ? 'update' : 'save';
+			// teamName, formatid, rawPrivacy, rawTeam
+			var buf = [];
+			if (this.curTeam.teamid) buf.push(this.curTeam.teamid);
+			buf.push(this.curTeam.name);
+			buf.push(this.curTeam.format);
+			buf.push(this.$('input[name=teamprivacy]').get(0).checked ? 1 : 0);
+			var team = Storage.exportTeam(this.curSetList, this.curTeam.gen, false);
+			if (!team) return app.addPopupMessage("Add a Pokémon to your team before uploading it!");
+			buf.push(team);
+			app.send(cmd + " " + buf.join(', '));
+			this.exported = true;
+			$('button[name=psExport]').addClass('disabled');
+			$('button[name=psExport]')[0].disabled = true;
+			$('label[name=editMessage]').hide();
+		},
 		pokepasteExport: function (type) {
 			var team = Storage.exportTeam(this.curSetList, this.curTeam.gen, type === 'openteamsheet');
 			if (!team) return app.addPopupMessage("Add a Pokémon to your team before uploading it!");
@@ -962,6 +1012,10 @@
 			if (edited) {
 				Storage.saveTeam(team);
 				app.user.trigger('saveteams');
+				this.exported = false;
+				$('button[name=psExport]').removeClass('disabled');
+				$('button[name=psExport]')[0].disabled = false;
+				$('label[name=editMessage]').show();
 			}
 
 			// We're going to try to animate the team settling into its new position
@@ -1146,6 +1200,9 @@
 					if (/^gen\d+$/.test(formatName)) return true;
 					return false;
 				};
+				if (this.loadingTeam) buf += '<div style="message-error">Downloading team from server...</strong><br />';
+				buf += '<label name="editMessage" style="display: none">';
+				buf += 'Remember to click the upload button below to sync your changes to the server!</label><br />';
 				if (exports.BattleFormats) {
 					buf += '<li class="format-select">';
 					buf += '<label class="label">Format:</label><button class="select formatselect teambuilderformatselect" name="format" value="' + this.curTeam.format + '">' + (isGenericFormat(this.curTeam.format) ? '<em>Select a format</em>' : BattleLog.escapeFormat(this.curTeam.format)) + '</button>';
@@ -1176,6 +1233,10 @@
 				buf += '<input type="hidden" name="paste" id="pasteData">';
 				buf += '<input type="hidden" name="author" id="pasteAuthor">';
 				buf += '<input type="hidden" name="notes" id="pasteNotes">';
+				buf += '<button name="psExport" type="submit" class="button exportbutton"> <i class="fa fa-upload"></i> Upload to Showdown database (saves across devices)</button>';
+				var privacy = (Storage.prefs('uploadprivacy') || typeof Storage.prefs('uploadprivacy') !== 'boolean') ? 'checked' : '';
+				buf += ' <small>(Private:</small> <input type="checkbox" name="teamprivacy" ' + privacy + ' /><small>)</small>';
+				buf += '<br />';
 				buf += '<button name="pokepasteExport" type="submit" class="button exportbutton"><i class="fa fa-upload"></i> Upload to PokePaste</button></form>';
 				if (this.curTeam.format.includes('vgc')) {
 					buf += '<button name="pokepasteExport" value="openteamsheet" type="submit" class="button exportbutton"><i class="fa fa-upload"></i> Upload to PokePaste (Open Team Sheet)</button></form>';
@@ -1253,7 +1314,7 @@
 					}
 				}
 				if (this.curTeam.gen === 9) {
-					buf += '<span class="detailcell"><label>Tera Type</label>' + (set.teraType || species.types[0]) + '</span>';
+					buf += '<span class="detailcell"><label>Tera Type</label>' + (species.forceTeraType || set.teraType || species.types[0]) + '</span>';
 				}
 			}
 			buf += '</button></div></div>';
@@ -1463,6 +1524,9 @@
 			}
 		},
 		validate: function () {
+			if (this.curTeam.teamid && !this.curTeam.loaded) {
+				return app.loadTeam(this.curTeam, this.validate.bind(this));
+			}
 			var format = this.curTeam.format || 'gen7anythinggoes';
 
 			if (!this.curSetList.length) {
@@ -1473,8 +1537,9 @@
 			if (window.BattleFormats && BattleFormats[format] && BattleFormats[format].battleFormat) {
 				format = BattleFormats[format].battleFormat;
 			}
-			app.sendTeam(this.curTeam);
-			app.send('/vtm ' + format);
+			app.sendTeam(this.curTeam, function () {
+				app.send('/vtm ' + format);
+			});
 		},
 		teamNameChange: function (e) {
 			var name = ($.trim(e.currentTarget.value) || 'Untitled ' + (this.curTeamLoc + 1));
@@ -1485,6 +1550,11 @@
 			if (name.indexOf('|') >= 0) {
 				app.addPopupMessage("Names can't contain the character |, since they're used for storing teams.");
 				name = name.replace(/\|/g, '');
+			}
+			if (name.indexOf('[') >= 0 || name.indexOf(']') >= 0) {
+				app.addPopupMessage("Names can't contain the characters [ or ], since they're used for storing team IDs.");
+				name = name.replace(/\[/g, '');
+				name = name.replace(/\]/g, '');
 			}
 			this.curTeam.name = name;
 			e.currentTarget.value = name;
@@ -2708,13 +2778,19 @@
 			}
 
 			if (this.curTeam.gen === 9) {
-				buf += '<div class="formrow"><label class="formlabel" title="Tera Type">Tera Type:</label><div><select name="teratype">';
-				var types = Dex.types.all();
-				var teraType = set.teraType || species.types[0];
-				for (var i = 0; i < types.length; i++) {
-					buf += '<option value="' + types[i].name + '"' + (teraType === types[i].name ? ' selected="selected"' : '') + '>' + types[i].name + '</option>';
+				buf += '<div class="formrow"><label class="formlabel" title="Tera Type">Tera Type:</label><div>';
+				if (species.forceTeraType) {
+					buf += species.forceTeraType;
+				} else {
+					buf += '<select name="teratype">';
+					var types = Dex.types.all();
+					var teraType = set.teraType || species.types[0];
+					for (var i = 0; i < types.length; i++) {
+						buf += '<option value="' + types[i].name + '"' + (teraType === types[i].name ? ' selected="selected"' : '') + '>' + types[i].name + '</option>';
+					}
+					buf += '</select>';
 				}
-				buf += '</select></div></div>';
+				buf += '</div></div>';
 			}
 
 			buf += '</form>';
@@ -2825,7 +2901,7 @@
 					}
 				}
 				if (this.curTeam.gen === 9) {
-					buf += '<span class="detailcell"><label>Tera Type</label>' + (set.teraType || species.types[0]) + '</span>';
+					buf += '<span class="detailcell"><label>Tera Type</label>' + (species.forceTeraType || set.teraType || species.types[0]) + '</span>';
 				}
 			}
 			this.$('button[name=details]').html(buf);
@@ -3045,6 +3121,10 @@
 				if (baseFormat.substr(0, 3) === 'gen') baseFormat = baseFormat.substr(4);
 				if (baseFormat.substr(0, 4) === 'bdsp') baseFormat = baseFormat.substr(4);
 				if (baseFormat.substr(0, 8) === 'pokebank') baseFormat = baseFormat.substr(8);
+				if (baseFormat.substr(0, 6) === 'natdex') baseFormat = baseFormat.substr(6);
+				if (baseFormat.substr(0, 11) === 'nationaldex') baseFormat = baseFormat.substr(11);
+				if (baseFormat.substr(-5) === 'draft') baseFormat = baseFormat.substr(0, baseFormat.length - 5);
+				if (!baseFormat) baseFormat = 'ou';
 				if (this.curTeam && this.curTeam.format) {
 					if (baseFormat === 'battlespotsingles' || baseFormat === 'battlespotdoubles' || baseFormat.substr(0, 3) === 'vgc' ||
 						baseFormat === 'battlefestivaldoubles') {
@@ -3076,6 +3156,10 @@
 				if (baseFormat.substr(0, 3) === 'gen') baseFormat = baseFormat.substr(4);
 				if (baseFormat.substr(0, 4) === 'bdsp') baseFormat = baseFormat.substr(4);
 				if (baseFormat.substr(0, 8) === 'pokebank') baseFormat = baseFormat.substr(8);
+				if (baseFormat.substr(0, 6) === 'natdex') baseFormat = baseFormat.substr(6);
+				if (baseFormat.substr(0, 11) === 'nationaldex') baseFormat = baseFormat.substr(11);
+				if (baseFormat.substr(-5) === 'draft') baseFormat = baseFormat.substr(0, baseFormat.length - 5);
+				if (!baseFormat) baseFormat = 'ou';
 				if (this.curTeam && this.curTeam.format) {
 					if (baseFormat === 'battlespotsingles' || baseFormat === 'battlespotdoubles' || baseFormat.substr(0, 3) === 'vgc' ||
 						baseFormat === 'battlefestivaldoubles') {
@@ -3291,6 +3375,10 @@
 				if (baseFormat.substr(0, 3) === 'gen') baseFormat = baseFormat.substr(4);
 				if (baseFormat.substr(0, 4) === 'bdsp') baseFormat = baseFormat.substr(4);
 				if (baseFormat.substr(0, 8) === 'pokebank') baseFormat = baseFormat.substr(8);
+				if (baseFormat.substr(0, 6) === 'natdex') baseFormat = baseFormat.substr(6);
+				if (baseFormat.substr(0, 11) === 'nationaldex') baseFormat = baseFormat.substr(11);
+				if (baseFormat.substr(-5) === 'draft') baseFormat = baseFormat.substr(0, baseFormat.length - 5);
+				if (!baseFormat) baseFormat = 'ou';
 				if (this.curTeam && this.curTeam.format) {
 					if (baseFormat.substr(0, 10) === 'battlespot' && baseFormat.substr(0, 19) !== 'battlespotspecial13' ||
 						baseFormat.substr(0, 3) === 'vgc' || baseFormat.substr(0, 14) === 'battlefestival') set.level = 50;
